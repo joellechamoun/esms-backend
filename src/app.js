@@ -35,4 +35,7 @@ app.use("/api/faculty-availability", facultyAvailabilityRoutes);
 const settingsRoutes = require("./routes/settings.routes");
 app.use("/api/settings", settingsRoutes);
 
+const examsRoutes = require("./routes/exams.routes");
+app.use("/api/exams", examsRoutes);
+
 module.exports = app;

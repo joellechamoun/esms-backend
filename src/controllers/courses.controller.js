@@ -1,4 +1,5 @@
 const Course = require("../models/Course");
+const Setting = require("../models/Setting");
 
 // CREATE
 async function createCourse(req, res) {
@@ -32,22 +33,49 @@ async function createCourse(req, res) {
   }
 }
 
+
+
 // READ ALL (supports optional filtering by term/year/semester)
 async function getCourses(req, res) {
   try {
     const { term, year, semester } = req.query;
 
     const filter = {};
-    if (term) filter.term = term; // later we’ll support term=current via Settings
+
+    // ✅ Handle term (including term=current)
+    if (term) {
+      if (term === "current") {
+
+        const current = await Setting.findOne({ key: "currentTerm" });
+
+        if (!current) {
+          return res
+            .status(400)
+            .json({ message: "Current term is not set in settings" });
+        }
+
+        filter.term = current.value;
+      } else {
+        filter.term = term;
+      }
+    }
+
+    // Other filters
     if (year !== undefined) filter.year = Number(year);
     if (semester) filter.semester = semester;
 
-    const courses = await Course.find(filter).populate("faculty", "name email role");
+    const courses = await Course.find(filter).populate(
+      "faculty",
+      "name email role"
+    );
+
     return res.json(courses);
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
 }
+
+
 
 // READ ONE
 async function getCourseById(req, res) {
