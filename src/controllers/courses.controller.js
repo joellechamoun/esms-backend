@@ -42,7 +42,7 @@ async function getCourses(req, res) {
 
     const filter = {};
 
-    // ✅ Handle term (including term=current)
+    // Handle term (including term=current)
     if (term) {
       if (term === "current") {
 
