@@ -1,5 +1,6 @@
 const Course = require("../models/Course");
 const Setting = require("../models/Setting");
+const Registration = require("../models/Registration");
 
 // CREATE
 async function createCourse(req, res) {
@@ -16,36 +17,32 @@ async function createCourse(req, res) {
       code: code.trim(),
       name: name.trim(),
       year: Number(year),
-      semester, // "S1"..."S6"
-      term: term.trim(), // e.g. "Spring 2026"
+      semester,
+      term: term.trim(),
       faculty: faculty || null,
     });
 
     return res.status(201).json(course);
   } catch (err) {
-    // Duplicate (code + term) unique index
     if (err.code === 11000) {
       return res
         .status(409)
         .json({ message: "Course code already exists for this term" });
     }
+
     return res.status(500).json({ message: err.message });
   }
 }
 
-
-
-// READ ALL (supports optional filtering by term/year/semester)
+// READ ALL
 async function getCourses(req, res) {
   try {
     const { term, year, semester } = req.query;
 
     const filter = {};
 
-    // Handle term (including term=current)
     if (term) {
       if (term === "current") {
-
         const current = await Setting.findOne({ key: "currentTerm" });
 
         if (!current) {
@@ -60,32 +57,49 @@ async function getCourses(req, res) {
       }
     }
 
-    // Other filters
     if (year !== undefined) filter.year = Number(year);
     if (semester) filter.semester = semester;
 
-    const courses = await Course.find(filter).populate(
-      "faculty",
-      "name email role"
+    const courses = await Course.find(filter)
+      .populate("faculty", "name email role")
+      .lean();
+
+    const coursesWithCounts = await Promise.all(
+      courses.map(async (course) => {
+        const registeredCount = await Registration.countDocuments({
+          course: course._id,
+        });
+
+        return {
+          ...course,
+          registeredCount,
+        };
+      })
     );
 
-    return res.json(courses);
+    return res.json(coursesWithCounts);
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
 }
 
-
-
 // READ ONE
 async function getCourseById(req, res) {
   try {
-    const course = await Course.findById(req.params.id).populate(
-      "faculty",
-      "name email role"
-    );
+    const course = await Course.findById(req.params.id)
+      .populate("faculty", "name email role")
+      .lean();
+
     if (!course) return res.status(404).json({ message: "Course not found" });
-    return res.json(course);
+
+    const registeredCount = await Registration.countDocuments({
+      course: course._id,
+    });
+
+    return res.json({
+      ...course,
+      registeredCount,
+    });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -118,6 +132,7 @@ async function updateCourse(req, res) {
         .status(409)
         .json({ message: "Course code already exists for this term" });
     }
+
     return res.status(500).json({ message: err.message });
   }
 }
@@ -126,7 +141,9 @@ async function updateCourse(req, res) {
 async function deleteCourse(req, res) {
   try {
     const course = await Course.findByIdAndDelete(req.params.id);
+
     if (!course) return res.status(404).json({ message: "Course not found" });
+
     return res.json({ message: "Course deleted" });
   } catch (err) {
     return res.status(500).json({ message: err.message });
