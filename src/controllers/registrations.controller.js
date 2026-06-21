@@ -36,7 +36,14 @@ async function getMyRegistrations(req, res) {
     const studentId = req.user.userId;
 
     const regs = await Registration.find({ student: studentId })
-      .populate("course", "code name year semester term")
+      .populate({
+        path: "course",
+        select: "code name year semester major",
+        populate: {
+          path: "major",
+          select: "code name",
+        },
+      })
       .sort({ createdAt: -1 });
 
     return res.json(regs);
@@ -53,14 +60,23 @@ async function getMyExamSchedule(req, res) {
     const courseIds = regs.map((reg) => reg.course);
 
     const exams = await Exam.find({ course: { $in: courseIds } })
-      .populate("course", "code name year semester term")
+      .populate({
+        path: "course",
+        select: "code name year semester major",
+        populate: {
+          path: "major",
+          select: "code name",
+        },
+      })
       .populate("room", "name capacity building")
       .populate("timeSlot", "date startTime endTime")
       .populate("examSession", "name startDate endDate status");
 
-    const sortedExams = exams.sort((a, b) => {
-      const dateA = a.timeSlot.date + " " + a.timeSlot.startTime;
-      const dateB = b.timeSlot.date + " " + b.timeSlot.startTime;
+    const validExams = exams.filter((exam) => exam.course);
+
+    const sortedExams = validExams.sort((a, b) => {
+      const dateA = `${a.timeSlot?.date || ""} ${a.timeSlot?.startTime || ""}`;
+      const dateB = `${b.timeSlot?.date || ""} ${b.timeSlot?.startTime || ""}`;
       return dateA.localeCompare(dateB);
     });
 

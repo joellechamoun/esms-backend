@@ -11,14 +11,12 @@ async function createExam(req, res) {
   try {
     const { course, room, timeSlot, examSession } = req.body;
 
-    // Step 1: Basic validation
     if (!course || !room || !timeSlot || !examSession) {
       return res.status(400).json({
         message: "course, room, timeSlot, examSession are required",
       });
     }
 
-    // Step 2: Check if related records exist
     const courseExists = await Course.findById(course);
     if (!courseExists) {
       return res.status(404).json({ message: "Course not found" });
@@ -39,7 +37,6 @@ async function createExam(req, res) {
       return res.status(404).json({ message: "ExamSession not found" });
     }
 
-    // Step 3: Prevent same course from being scheduled twice in same exam session
     const existingCourseExam = await Exam.findOne({
       course,
       examSession,
@@ -51,7 +48,6 @@ async function createExam(req, res) {
       });
     }
 
-    // Step 4: Room capacity validation using registrations
     const newCourseStudents = await Registration.countDocuments({ course });
 
     const existingExams = await Exam.find({ room, timeSlot });
@@ -73,7 +69,6 @@ async function createExam(req, res) {
       });
     }
 
-    // Step 5: Prevent different academic years on the same day
     const sameDayTimeSlots = await TimeSlot.find({
       date: timeSlotExists.date,
     });
@@ -85,6 +80,10 @@ async function createExam(req, res) {
     }).populate("course");
 
     for (let existingExam of sameDayExams) {
+      if (!existingExam.course) {
+        continue;
+      }
+    
       if (existingExam.course.year !== courseExists.year) {
         return res.status(409).json({
           message: "Different academic years cannot have exams on the same day",
@@ -92,7 +91,6 @@ async function createExam(req, res) {
       }
     }
 
-    // Step 6: Save exam
     const exam = await Exam.create({
       course,
       room,
@@ -100,16 +98,30 @@ async function createExam(req, res) {
       examSession,
     });
 
-    return res.status(201).json(exam);
+    const populatedExam = await Exam.findById(exam._id)
+      .populate({
+        path: "course",
+        select: "code name year semester term major",
+        populate: {
+          path: "major",
+          select: "code name",
+        },
+      })
+      .populate("room", "name capacity building")
+      .populate("timeSlot", "date startTime endTime")
+      .populate("examSession", "name startDate endDate status");
+
+    return res.status(201).json(populatedExam);
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
 }
 
 // GET EXAMS
+// GET EXAMS
 async function getExams(req, res) {
   try {
-    const { examSession, year, term } = req.query;
+    const { examSession, year, term, major } = req.query;
 
     const filter = {};
 
@@ -121,6 +133,10 @@ async function getExams(req, res) {
 
     if (year) {
       courseFilter.year = Number(year);
+    }
+
+    if (major) {
+      courseFilter.major = major;
     }
 
     if (term) {
@@ -142,8 +158,12 @@ async function getExams(req, res) {
     const exams = await Exam.find(filter)
       .populate({
         path: "course",
-        select: "code name year semester term",
+        select: "code name year semester term major",
         match: courseFilter,
+        populate: {
+          path: "major",
+          select: "code name",
+        },
       })
       .populate("room", "name capacity building")
       .populate("timeSlot", "date startTime endTime")
@@ -152,8 +172,8 @@ async function getExams(req, res) {
     const filteredExams = exams
       .filter((exam) => exam.course !== null)
       .sort((a, b) => {
-        const dateA = a.timeSlot.date + " " + a.timeSlot.startTime;
-        const dateB = b.timeSlot.date + " " + b.timeSlot.startTime;
+        const dateA = examDateTime(a);
+        const dateB = examDateTime(b);
 
         return dateA.localeCompare(dateB);
       });
@@ -164,10 +184,21 @@ async function getExams(req, res) {
   }
 }
 
+function examDateTime(exam) {
+  return `${exam.timeSlot?.date || ""} ${exam.timeSlot?.startTime || ""}`;
+}
+
 async function getStructuredExams(req, res) {
   try {
     const exams = await Exam.find()
-      .populate("course", "code name year")
+      .populate({
+        path: "course",
+        select: "code name year major",
+        populate: {
+          path: "major",
+          select: "code name",
+        },
+      })
       .populate("room", "name")
       .populate("timeSlot", "date startTime endTime");
 
@@ -183,6 +214,8 @@ async function getStructuredExams(req, res) {
       structured[date].push({
         time: `${exam.timeSlot.startTime} - ${exam.timeSlot.endTime}`,
         course: exam.course.code,
+        courseName: exam.course.name,
+        major: exam.course.major,
         year: exam.course.year,
         room: exam.room.name,
       });

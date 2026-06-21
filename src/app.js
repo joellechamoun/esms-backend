@@ -17,6 +17,9 @@ app.use("/api/auth", authRoutes);
 const coursesRoutes = require("./routes/courses.routes");
 app.use("/api/courses", coursesRoutes);
 
+const majorsRoutes = require("./routes/majors.routes");
+app.use("/api/majors", majorsRoutes);
+
 const roomsRoutes = require("./routes/rooms.routes");
 app.use("/api/rooms", roomsRoutes);
 
