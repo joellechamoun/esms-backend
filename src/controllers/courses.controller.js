@@ -267,6 +267,14 @@ async function updateCourse(req, res) {
 // DELETE
 async function deleteCourse(req, res) {
   try {
+    const linkedExam = await Exam.findOne({ course: req.params.id });
+
+    if (linkedExam) {
+      return res.status(400).json({
+        message: "Cannot delete this course because it has scheduled exams",
+      });
+    }
+
     const course = await Course.findByIdAndDelete(req.params.id);
 
     if (!course) return res.status(404).json({ message: "Course not found" });

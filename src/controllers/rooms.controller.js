@@ -1,4 +1,5 @@
 const Room = require("../models/Room");
+const Exam = require("../models/Exam");
 
 function validateCapacity(capacity) {
   const numericCapacity = Number(capacity);
@@ -98,6 +99,14 @@ async function updateRoom(req, res) {
 
 async function deleteRoom(req, res) {
   try {
+    const linkedExam = await Exam.findOne({ room: req.params.id });
+
+    if (linkedExam) {
+      return res.status(400).json({
+        message: "Cannot delete this room because it has scheduled exams",
+      });
+    }
+
     const room = await Room.findByIdAndDelete(req.params.id);
 
     if (!room) return res.status(404).json({ message: "Room not found" });

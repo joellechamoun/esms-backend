@@ -4,7 +4,6 @@ const Room = require("../models/Room");
 const TimeSlot = require("../models/TimeSlot");
 const ExamSession = require("../models/ExamSession");
 const Registration = require("../models/Registration");
-const Setting = require("../models/Setting");
 
 // CREATE EXAM
 async function createExam(req, res) {
@@ -101,7 +100,7 @@ async function createExam(req, res) {
     const populatedExam = await Exam.findById(exam._id)
       .populate({
         path: "course",
-        select: "code name year semester term major",
+        select: "code name year semester major",
         populate: {
           path: "major",
           select: "code name",
@@ -118,10 +117,9 @@ async function createExam(req, res) {
 }
 
 // GET EXAMS
-// GET EXAMS
 async function getExams(req, res) {
   try {
-    const { examSession, year, term, major } = req.query;
+    const { examSession, year, major } = req.query;
 
     const filter = {};
 
@@ -139,26 +137,10 @@ async function getExams(req, res) {
       courseFilter.major = major;
     }
 
-    if (term) {
-      if (term === "current") {
-        const current = await Setting.findOne({ key: "currentTerm" });
-
-        if (!current) {
-          return res
-            .status(400)
-            .json({ message: "Current term is not set in settings" });
-        }
-
-        courseFilter.term = current.value;
-      } else {
-        courseFilter.term = term;
-      }
-    }
-
     const exams = await Exam.find(filter)
       .populate({
         path: "course",
-        select: "code name year semester term major",
+        select: "code name year semester major",
         match: courseFilter,
         populate: {
           path: "major",
@@ -205,6 +187,10 @@ async function getStructuredExams(req, res) {
     const structured = {};
 
     exams.forEach((exam) => {
+      if (!exam.course || !exam.room || !exam.timeSlot) {
+        return;
+      }
+
       const date = exam.timeSlot.date;
 
       if (!structured[date]) {

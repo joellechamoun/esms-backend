@@ -1,9 +1,37 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 
 const app = express();
 
-app.use(cors());
+app.use(
+  helmet({
+    // This API is deliberately called cross-origin by a separate frontend
+    // deployment, so the default same-origin resource policy would block it.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
+
+const allowedOrigins = [
+  "https://examflow-35jn.onrender.com",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+];
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Non-browser requests (curl, server-to-server, mobile apps) send no Origin header.
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      const err = new Error("Not allowed by CORS");
+      err.status = 403;
+      return callback(err);
+    },
+  })
+);
 app.use(express.json());
 
 // Health check
@@ -40,5 +68,17 @@ app.use("/api/settings", settingsRoutes);
 
 const examsRoutes = require("./routes/exams.routes");
 app.use("/api/exams", examsRoutes);
+
+// 404 handler (no route matched)
+app.use((req, res) => {
+  res.status(404).json({ message: "Not found" });
+});
+
+// Global error handler (safety net for errors not caught in controllers)
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(err.status || 500).json({ message: "Internal server error" });
+});
 
 module.exports = app;
