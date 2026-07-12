@@ -52,6 +52,53 @@ async function getMyRegistrations(req, res) {
   }
 }
 
+async function deleteRegistration(req, res) {
+  try {
+    const studentId = req.user.userId;
+
+    const registration = await Registration.findById(req.params.id);
+
+    if (!registration) {
+      return res.status(404).json({ message: "Registration not found" });
+    }
+
+    if (registration.student.toString() !== studentId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    await Registration.findByIdAndDelete(req.params.id);
+
+    return res.json({ message: "Unregistered successfully" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+async function getAllRegistrations(req, res) {
+  try {
+    const { course } = req.query;
+
+    const filter = {};
+    if (course) filter.course = course;
+
+    const regs = await Registration.find(filter)
+      .populate("student", "name email")
+      .populate({
+        path: "course",
+        select: "code name year semester major",
+        populate: {
+          path: "major",
+          select: "code name",
+        },
+      })
+      .sort({ createdAt: -1 });
+
+    return res.json(regs);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
 async function getMyExamSchedule(req, res) {
   try {
     const studentId = req.user.userId;
@@ -89,5 +136,7 @@ async function getMyExamSchedule(req, res) {
 module.exports = {
   createRegistration,
   getMyRegistrations,
+  deleteRegistration,
+  getAllRegistrations,
   getMyExamSchedule,
 };
