@@ -1,8 +1,25 @@
 const router = require("express").Router();
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
 const User = require("../models/User");
 const { auth } = require("../middleware/auth");
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts. Please try again later." },
+});
+
+const studentRegisterLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many registration attempts. Please try again later." },
+});
 
 // Register
 // - If no users exist yet: allow creating the first user (default Admin)
@@ -66,7 +83,7 @@ router.post("/register", async (req, res) => {
 });
 
 // Public student registration
-router.post("/student-register", async (req, res) => {
+router.post("/student-register", studentRegisterLimiter, async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
@@ -111,7 +128,7 @@ router.post("/student-register", async (req, res) => {
 });
 
 // Login
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
