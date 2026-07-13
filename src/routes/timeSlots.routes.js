@@ -23,6 +23,13 @@ router.get(
   ctrl.getTimeSlots
 );
 
+router.post(
+  "/exam-sessions/:examSessionId/time-slots/generate",
+  auth,
+  requireRole(["Admin"]),
+  ctrl.generateTimeSlots
+);
+
 // Update/delete a slot by id
 router.put("/time-slots/:id", auth, requireRole(["Admin"]), ctrl.updateTimeSlot);
 router.delete("/time-slots/:id", auth, requireRole(["Admin"]), ctrl.deleteTimeSlot);

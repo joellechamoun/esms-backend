@@ -2,10 +2,16 @@ const mongoose = require("mongoose");
 
 const examSessionSchema = new mongoose.Schema(
   {
-    season: {
+    sessionOrder: {
       type: String,
       required: true,
-      enum: ["Fall", "Spring"],
+      enum: ["First", "Second", "Other"],
+    },
+
+    semesterScope: {
+      type: String,
+      required: true,
+      enum: ["S1", "S2", "Both"],
     },
 
     academicYear: {
@@ -18,7 +24,7 @@ const examSessionSchema = new mongoose.Schema(
     examType: {
       type: String,
       required: true,
-      enum: ["Midterm", "Final"],
+      enum: ["Partial", "Final"],
     },
 
     name: {
@@ -41,7 +47,7 @@ const examSessionSchema = new mongoose.Schema(
 );
 
 examSessionSchema.index(
-  { season: 1, academicYear: 1, examType: 1 },
+  { sessionOrder: 1, semesterScope: 1, examType: 1, academicYear: 1 },
   { unique: true }
 );
 

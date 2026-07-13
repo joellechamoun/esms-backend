@@ -7,6 +7,13 @@ function toDateOnlyString(dateValue) {
 }
 
 function validateTimeRange(startTime, endTime) {
+  if (startTime < "08:00" || endTime > "19:00") {
+    return {
+      valid: false,
+      message: "Time slots must be between 08:00 and 19:00",
+    };
+  }
+
   if (startTime >= endTime) {
     return {
       valid: false,
@@ -155,6 +162,80 @@ async function updateTimeSlot(req, res) {
   }
 }
 
+// Generate slots for a given exam session from weekday + time-block params
+async function generateTimeSlots(req, res) {
+  try {
+    const { examSessionId } = req.params;
+    const { daysOfWeek, timeBlocks } = req.body;
+
+    if (!Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
+      return res.status(400).json({ message: "daysOfWeek is required" });
+    }
+
+    if (!Array.isArray(timeBlocks) || timeBlocks.length === 0) {
+      return res.status(400).json({ message: "timeBlocks is required" });
+    }
+
+    const session = await ExamSession.findById(examSessionId);
+
+    if (!session) {
+      return res.status(404).json({ message: "Exam session not found" });
+    }
+
+    for (const block of timeBlocks) {
+      const timeValidation = validateTimeRange(block.startTime, block.endTime);
+
+      if (!timeValidation.valid) {
+        return res.status(400).json({ message: timeValidation.message });
+      }
+    }
+
+    const daySet = new Set(daysOfWeek.map(Number));
+    const docs = [];
+
+    const cursor = new Date(toDateOnlyString(session.startDate));
+    const end = new Date(toDateOnlyString(session.endDate));
+
+    while (cursor <= end) {
+      if (daySet.has(cursor.getUTCDay())) {
+        const dateStr = cursor.toISOString().slice(0, 10);
+
+        for (const block of timeBlocks) {
+          docs.push({
+            examSession: examSessionId,
+            date: dateStr,
+            startTime: block.startTime,
+            endTime: block.endTime,
+          });
+        }
+      }
+
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    let createdCount = docs.length;
+    let skippedCount = 0;
+
+    try {
+      await TimeSlot.insertMany(docs, { ordered: false });
+    } catch (err) {
+      const inserted = err.insertedDocs?.length || 0;
+      const failed = err.writeErrors?.length || 0;
+
+      if (failed === 0) {
+        throw err;
+      }
+
+      createdCount = inserted;
+      skippedCount = failed;
+    }
+
+    return res.status(201).json({ createdCount, skippedCount });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
 async function deleteTimeSlot(req, res) {
   try {
     const linkedExam = await Exam.findOne({ timeSlot: req.params.id });
@@ -182,4 +263,5 @@ module.exports = {
   getTimeSlots,
   updateTimeSlot,
   deleteTimeSlot,
+  generateTimeSlots,
 };
