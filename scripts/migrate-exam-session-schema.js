@@ -17,6 +17,10 @@
 // Usage: run with MONGO_URI pointing at whichever database you want to
 // migrate (edit .env, or prefix the command with MONGO_URI=...).
 //   node scripts/migrate-exam-session-schema.js
+//
+// The script prints the connected host (not just the database name) and
+// flags whether it looks local or remote before touching anything, since a
+// local dev database and a remote one can easily share the same db name.
 
 require("dotenv").config();
 const mongoose = require("mongoose");
@@ -31,7 +35,19 @@ async function main() {
   }
 
   await mongoose.connect(process.env.MONGO_URI);
-  console.log(`Connected to ${mongoose.connection.name}`);
+
+  const host = mongoose.connection.host;
+  const isLocal = ["localhost", "127.0.0.1"].includes(host);
+
+  console.log("==================================================");
+  console.log(`Connected host: ${host}`);
+  console.log(`Connected database: ${mongoose.connection.name}`);
+  console.log(
+    isLocal
+      ? "  -> This looks like a LOCAL database."
+      : "  -> This looks like a REMOTE database (e.g. Atlas/production)."
+  );
+  console.log("==================================================");
 
   const sessionCountBefore = await ExamSession.countDocuments();
   const slotCountBefore = await TimeSlot.countDocuments();
