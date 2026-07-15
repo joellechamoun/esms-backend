@@ -1,18 +1,28 @@
 const Major = require("../models/Major");
 const Course = require("../models/Course");
+const Department = require("../models/Department");
 
 async function createMajor(req, res) {
   try {
-    const { code, name, description } = req.body;
+    const { code, name, description, department } = req.body;
 
-    if (!code || !name) {
-      return res.status(400).json({ message: "code and name are required" });
+    if (!code || !name || !department) {
+      return res
+        .status(400)
+        .json({ message: "code, name, and department are required" });
+    }
+
+    const departmentExists = await Department.findById(department);
+
+    if (!departmentExists) {
+      return res.status(404).json({ message: "Department not found" });
     }
 
     const major = await Major.create({
       code: code.trim().toUpperCase(),
       name: name.trim(),
       description: description?.trim() || "",
+      department,
     });
 
     return res.status(201).json(major);
@@ -27,7 +37,9 @@ async function createMajor(req, res) {
 
 async function getMajors(req, res) {
   try {
-    const majors = await Major.find().sort({ name: 1 });
+    const majors = await Major.find()
+      .populate("department", "code name")
+      .sort({ name: 1 });
     return res.json(majors);
   } catch (err) {
     return res.status(500).json({ message: err.message });
@@ -36,7 +48,10 @@ async function getMajors(req, res) {
 
 async function getMajorById(req, res) {
   try {
-    const major = await Major.findById(req.params.id);
+    const major = await Major.findById(req.params.id).populate(
+      "department",
+      "code name"
+    );
 
     if (!major) {
       return res.status(404).json({ message: "Major not found" });
@@ -50,7 +65,7 @@ async function getMajorById(req, res) {
 
 async function updateMajor(req, res) {
   try {
-    const { code, name, description } = req.body;
+    const { code, name, description, department } = req.body;
 
     const update = {};
 
@@ -58,10 +73,24 @@ async function updateMajor(req, res) {
     if (name) update.name = name.trim();
     if (description !== undefined) update.description = description.trim();
 
+    if (department !== undefined) {
+      if (!department) {
+        return res.status(400).json({ message: "Department is required" });
+      }
+
+      const departmentExists = await Department.findById(department);
+
+      if (!departmentExists) {
+        return res.status(404).json({ message: "Department not found" });
+      }
+
+      update.department = department;
+    }
+
     const major = await Major.findByIdAndUpdate(req.params.id, update, {
       new: true,
       runValidators: true,
-    });
+    }).populate("department", "code name");
 
     if (!major) {
       return res.status(404).json({ message: "Major not found" });

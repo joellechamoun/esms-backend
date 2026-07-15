@@ -4,15 +4,27 @@ const ctrl = require("../controllers/courses.controller");
 
 router.use(auth);
 
-// Admin creates/updates/deletes courses
-router.post("/", requireRole(["Admin"]), ctrl.createCourse);
+// Admin + HeadOfDepartment create/update/delete courses (HoD scoped to own department)
+router.post("/", requireRole(["Admin", "HeadOfDepartment"]), ctrl.createCourse);
 
-// Admin + Student can view courses
-router.get("/", requireRole(["Admin", "Student"]), ctrl.getCourses);
-router.get("/:id", requireRole(["Admin", "Student"]), ctrl.getCourseById);
+// Admin + Student + HeadOfDepartment can view courses
+router.get(
+  "/",
+  requireRole(["Admin", "Student", "HeadOfDepartment"]),
+  ctrl.getCourses
+);
+router.get(
+  "/:id",
+  requireRole(["Admin", "Student", "HeadOfDepartment"]),
+  ctrl.getCourseById
+);
 
-// Admin-only update/delete
-router.put("/:id", requireRole(["Admin"]), ctrl.updateCourse);
-router.delete("/:id", requireRole(["Admin"]), ctrl.deleteCourse);
+// Admin + HeadOfDepartment update/delete (HoD scoped to own department)
+router.put("/:id", requireRole(["Admin", "HeadOfDepartment"]), ctrl.updateCourse);
+router.delete(
+  "/:id",
+  requireRole(["Admin", "HeadOfDepartment"]),
+  ctrl.deleteCourse
+);
 
 module.exports = router;

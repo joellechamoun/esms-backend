@@ -1,29 +1,45 @@
 const Exam = require("../models/Exam");
 const Course = require("../models/Course");
-const Room = require("../models/Room");
 const TimeSlot = require("../models/TimeSlot");
 const ExamSession = require("../models/ExamSession");
+const ExamSchedule = require("../models/ExamSchedule");
 const Registration = require("../models/Registration");
+const User = require("../models/User");
+
+async function getActingHeadDepartment(req) {
+  const actingUser = await User.findById(req.user.userId);
+  return actingUser?.department ? actingUser.department.toString() : null;
+}
 
 // CREATE EXAM
 async function createExam(req, res) {
   try {
-    const { course, room, timeSlot, examSession } = req.body;
+    const { course, timeSlot, examSession } = req.body;
 
-    if (!course || !room || !timeSlot || !examSession) {
+    if (!course || !timeSlot || !examSession) {
       return res.status(400).json({
-        message: "course, room, timeSlot, examSession are required",
+        message: "course, timeSlot, examSession are required",
       });
     }
 
-    const courseExists = await Course.findById(course);
+    const courseExists = await Course.findById(course).populate(
+      "major",
+      "department"
+    );
     if (!courseExists) {
       return res.status(404).json({ message: "Course not found" });
     }
 
-    const roomExists = await Room.findById(room);
-    if (!roomExists) {
-      return res.status(404).json({ message: "Room not found" });
+    const department = courseExists.major.department;
+
+    if (req.user.role === "HeadOfDepartment") {
+      const headDepartment = await getActingHeadDepartment(req);
+
+      if (!headDepartment || department.toString() !== headDepartment) {
+        return res.status(403).json({
+          message: "You can only schedule exams for courses in your own department",
+        });
+      }
     }
 
     const timeSlotExists = await TimeSlot.findById(timeSlot);
@@ -44,27 +60,6 @@ async function createExam(req, res) {
     if (existingCourseExam) {
       return res.status(409).json({
         message: "This course is already scheduled in this exam session",
-      });
-    }
-
-    const newCourseStudents = await Registration.countDocuments({ course });
-
-    const existingExams = await Exam.find({ room, timeSlot });
-
-    let existingStudents = 0;
-
-    for (let exam of existingExams) {
-      const count = await Registration.countDocuments({
-        course: exam.course,
-      });
-      existingStudents += count;
-    }
-
-    const totalStudents = existingStudents + newCourseStudents;
-
-    if (totalStudents > roomExists.capacity) {
-      return res.status(409).json({
-        message: "Room capacity exceeded for this time slot",
       });
     }
 
@@ -90,11 +85,21 @@ async function createExam(req, res) {
       }
     }
 
+    let examSchedule = await ExamSchedule.findOne({ department, examSession });
+
+    if (!examSchedule) {
+      examSchedule = await ExamSchedule.create({ department, examSession });
+    } else if (examSchedule.status !== "Draft") {
+      return res.status(409).json({
+        message: `This department's exam schedule for this session is already ${examSchedule.status} — cannot add exams`,
+      });
+    }
+
     const exam = await Exam.create({
       course,
-      room,
       timeSlot,
       examSession,
+      examSchedule: examSchedule._id,
     });
 
     const populatedExam = await Exam.findById(exam._id)
@@ -108,7 +113,8 @@ async function createExam(req, res) {
       })
       .populate("room", "name capacity building")
       .populate("timeSlot", "date startTime endTime")
-      .populate("examSession", "name startDate endDate status");
+      .populate("examSession", "name startDate endDate status")
+      .populate("examSchedule", "status");
 
     return res.status(201).json(populatedExam);
   } catch (err) {
@@ -125,6 +131,20 @@ async function getExams(req, res) {
 
     if (examSession) {
       filter.examSession = examSession;
+    }
+
+    if (req.user.role === "HeadOfDepartment") {
+      const headDepartment = await getActingHeadDepartment(req);
+
+      if (!headDepartment) {
+        return res.json([]);
+      }
+
+      const schedules = await ExamSchedule.find({
+        department: headDepartment,
+      }).select("_id");
+
+      filter.examSchedule = { $in: schedules.map((s) => s._id) };
     }
 
     const courseFilter = {};
@@ -172,7 +192,23 @@ function examDateTime(exam) {
 
 async function getStructuredExams(req, res) {
   try {
-    const exams = await Exam.find()
+    const filter = {};
+
+    if (req.user.role === "HeadOfDepartment") {
+      const headDepartment = await getActingHeadDepartment(req);
+
+      if (!headDepartment) {
+        return res.json({});
+      }
+
+      const schedules = await ExamSchedule.find({
+        department: headDepartment,
+      }).select("_id");
+
+      filter.examSchedule = { $in: schedules.map((s) => s._id) };
+    }
+
+    const exams = await Exam.find(filter)
       .populate({
         path: "course",
         select: "code name year major",
@@ -215,11 +251,32 @@ async function getStructuredExams(req, res) {
 
 async function deleteExam(req, res) {
   try {
-    const exam = await Exam.findByIdAndDelete(req.params.id);
+    const exam = await Exam.findById(req.params.id).populate("examSchedule");
 
     if (!exam) {
       return res.status(404).json({ message: "Exam not found" });
     }
+
+    if (req.user.role === "HeadOfDepartment") {
+      const headDepartment = await getActingHeadDepartment(req);
+
+      if (
+        !headDepartment ||
+        exam.examSchedule.department.toString() !== headDepartment
+      ) {
+        return res.status(403).json({
+          message: "You can only delete exams in your own department",
+        });
+      }
+
+      if (exam.examSchedule.status !== "Draft") {
+        return res.status(409).json({
+          message: `Cannot delete an exam from a schedule that is ${exam.examSchedule.status}`,
+        });
+      }
+    }
+
+    await Exam.findByIdAndDelete(req.params.id);
 
     return res.json({ message: "Exam deleted successfully" });
   } catch (err) {

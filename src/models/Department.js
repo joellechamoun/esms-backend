@@ -1,7 +1,13 @@
 const mongoose = require("mongoose");
 
-const majorSchema = new mongoose.Schema(
+const departmentSchema = new mongoose.Schema(
   {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      unique: true,
+    },
     code: {
       type: String,
       required: true,
@@ -9,24 +15,13 @@ const majorSchema = new mongoose.Schema(
       uppercase: true,
       unique: true,
     },
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-      unique: true,
-    },
-    description: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    department: {
+    head: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Department",
-      required: true,
+      ref: "User",
+      default: null,
     },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Major", majorSchema);
+module.exports = mongoose.model("Department", departmentSchema);

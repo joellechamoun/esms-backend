@@ -3,6 +3,12 @@ const Major = require("../models/Major");
 const Registration = require("../models/Registration");
 const Exam = require("../models/Exam");
 const TimeSlot = require("../models/TimeSlot");
+const User = require("../models/User");
+
+async function getActingHeadDepartment(req) {
+  const actingUser = await User.findById(req.user.userId);
+  return actingUser?.department ? actingUser.department.toString() : null;
+}
 
 const semestersByYear = {
   1: ["S1", "S2"],
@@ -94,6 +100,19 @@ async function createCourse(req, res) {
       return res.status(404).json({ message: "Major not found" });
     }
 
+    if (req.user.role === "HeadOfDepartment") {
+      const headDepartment = await getActingHeadDepartment(req);
+
+      if (
+        !headDepartment ||
+        majorExists.department.toString() !== headDepartment
+      ) {
+        return res.status(403).json({
+          message: "You can only add courses to majors in your own department",
+        });
+      }
+    }
+
     const course = await Course.create({
       code: code.trim().toUpperCase(),
       name: name.trim(),
@@ -133,6 +152,25 @@ async function getCourses(req, res) {
     if (year !== undefined) filter.year = Number(year);
     if (semester) filter.semester = semester;
     if (major) filter.major = major;
+
+    if (req.user.role === "HeadOfDepartment") {
+      const headDepartment = await getActingHeadDepartment(req);
+
+      if (!headDepartment) {
+        return res.json([]);
+      }
+
+      const ownMajors = await Major.find({ department: headDepartment }).select(
+        "_id"
+      );
+      const ownMajorIds = ownMajors.map((m) => m._id.toString());
+
+      if (major && !ownMajorIds.includes(major)) {
+        return res.json([]);
+      }
+
+      filter.major = major || { $in: ownMajorIds };
+    }
 
     const courses = await Course.find(filter)
       .populate("faculty", "name email role")
@@ -188,10 +226,26 @@ async function updateCourse(req, res) {
 
     const update = {};
 
-    const existingCourse = await Course.findById(req.params.id);
+    const existingCourse = await Course.findById(req.params.id).populate(
+      "major",
+      "department"
+    );
 
     if (!existingCourse) {
       return res.status(404).json({ message: "Course not found" });
+    }
+
+    if (req.user.role === "HeadOfDepartment") {
+      const headDepartment = await getActingHeadDepartment(req);
+
+      if (
+        !headDepartment ||
+        existingCourse.major.department.toString() !== headDepartment
+      ) {
+        return res.status(403).json({
+          message: "You can only update courses in your own department",
+        });
+      }
     }
 
     const finalYear = year !== undefined ? Number(year) : existingCourse.year;
@@ -234,6 +288,19 @@ async function updateCourse(req, res) {
         return res.status(404).json({ message: "Major not found" });
       }
 
+      if (req.user.role === "HeadOfDepartment") {
+        const headDepartment = await getActingHeadDepartment(req);
+
+        if (
+          !headDepartment ||
+          majorExists.department.toString() !== headDepartment
+        ) {
+          return res.status(403).json({
+            message: "You can only move courses to majors in your own department",
+          });
+        }
+      }
+
       update.major = major;
     }
 
@@ -267,6 +334,28 @@ async function updateCourse(req, res) {
 // DELETE
 async function deleteCourse(req, res) {
   try {
+    const existingCourse = await Course.findById(req.params.id).populate(
+      "major",
+      "department"
+    );
+
+    if (!existingCourse) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+
+    if (req.user.role === "HeadOfDepartment") {
+      const headDepartment = await getActingHeadDepartment(req);
+
+      if (
+        !headDepartment ||
+        existingCourse.major.department.toString() !== headDepartment
+      ) {
+        return res.status(403).json({
+          message: "You can only delete courses in your own department",
+        });
+      }
+    }
+
     const linkedExam = await Exam.findOne({ course: req.params.id });
 
     if (linkedExam) {

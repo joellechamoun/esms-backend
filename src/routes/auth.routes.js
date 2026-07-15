@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
 const User = require("../models/User");
+const Department = require("../models/Department");
 const { auth } = require("../middleware/auth");
 
 const loginLimiter = rateLimit({
@@ -26,7 +27,7 @@ const studentRegisterLimiter = rateLimit({
 // - If users exist: only an Admin (with Bearer token) can create users
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, department } = req.body;
 
     if (!name || !email || !password) {
       return res
@@ -62,20 +63,51 @@ router.post("/register", async (req, res) => {
       }
     }
 
+    const finalRole = usersCount === 0 ? role || "Admin" : role || "Student";
+
+    let departmentDoc = null;
+
+    if (usersCount > 0) {
+      if (!department) {
+        return res.status(400).json({
+          message: "department is required",
+        });
+      }
+
+      departmentDoc = await Department.findById(department);
+
+      if (!departmentDoc) {
+        return res.status(404).json({ message: "Department not found" });
+      }
+
+      if (finalRole === "HeadOfDepartment" && departmentDoc.head) {
+        return res.status(409).json({
+          message: "This department already has a head of department",
+        });
+      }
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
 
     const user = await User.create({
       name: name.trim(),
       email: emailNorm,
       passwordHash,
-      role: usersCount === 0 ? role || "Admin" : role || "Student",
+      role: finalRole,
+      department: departmentDoc ? departmentDoc._id : null,
     });
+
+    if (finalRole === "HeadOfDepartment" && departmentDoc) {
+      departmentDoc.head = user._id;
+      await departmentDoc.save();
+    }
 
     return res.status(201).json({
       id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      department: user.department,
     });
   } catch (err) {
     return res.status(500).json({ message: err.message });
@@ -163,6 +195,7 @@ router.post("/login", loginLimiter, async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        department: user.department,
       },
     });
   } catch (err) {

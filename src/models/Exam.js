@@ -10,7 +10,7 @@ const examSchema = new mongoose.Schema(
     room: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Room",
-      required: true,
+      default: null,
     },
     timeSlot: {
       type: mongoose.Schema.Types.ObjectId,
@@ -20,6 +20,11 @@ const examSchema = new mongoose.Schema(
     examSession: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ExamSession",
+      required: true,
+    },
+    examSchedule: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ExamSchedule",
       required: true,
     },
   },

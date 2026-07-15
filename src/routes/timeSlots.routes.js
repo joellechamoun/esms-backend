@@ -19,7 +19,7 @@ router.post(
 router.get(
   "/exam-sessions/:examSessionId/time-slots",
   auth,
-  requireRole(["Admin"]),
+  requireRole(["Admin", "HeadOfDepartment"]),
   ctrl.getTimeSlots
 );
 

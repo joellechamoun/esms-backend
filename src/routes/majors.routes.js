@@ -4,8 +4,16 @@ const ctrl = require("../controllers/majors.controller");
 
 router.use(auth);
 
-router.get("/", requireRole(["Admin", "Student"]), ctrl.getMajors);
-router.get("/:id", requireRole(["Admin", "Student"]), ctrl.getMajorById);
+router.get(
+  "/",
+  requireRole(["Admin", "Student", "HeadOfDepartment"]),
+  ctrl.getMajors
+);
+router.get(
+  "/:id",
+  requireRole(["Admin", "Student", "HeadOfDepartment"]),
+  ctrl.getMajorById
+);
 
 router.post("/", requireRole(["Admin"]), ctrl.createMajor);
 router.put("/:id", requireRole(["Admin"]), ctrl.updateMajor);

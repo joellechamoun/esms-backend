@@ -4,14 +4,22 @@ const ctrl = require("../controllers/exams.controller");
 
 router.use(auth);
 
-// Admin views exams
-router.get("/", requireRole(["Admin"]), ctrl.getExams);
-router.get("/structured", requireRole(["Admin"]), ctrl.getStructuredExams);
+// Admin + HeadOfDepartment view exams (HoD scoped to own department)
+router.get("/", requireRole(["Admin", "HeadOfDepartment"]), ctrl.getExams);
+router.get(
+  "/structured",
+  requireRole(["Admin", "HeadOfDepartment"]),
+  ctrl.getStructuredExams
+);
 
-// Admin schedules exams
-router.post("/", requireRole(["Admin"]), ctrl.createExam);
+// Admin + HeadOfDepartment schedule exams (HoD scoped to own department)
+router.post("/", requireRole(["Admin", "HeadOfDepartment"]), ctrl.createExam);
 
-// Admin deletes exams
-router.delete("/:id", requireRole(["Admin"]), ctrl.deleteExam); 
+// Admin + HeadOfDepartment delete exams (HoD scoped to own department + Draft-only)
+router.delete(
+  "/:id",
+  requireRole(["Admin", "HeadOfDepartment"]),
+  ctrl.deleteExam
+);
 
 module.exports = router;
