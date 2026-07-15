@@ -19,8 +19,15 @@ router.post(
 router.get(
   "/exam-sessions/:examSessionId/time-slots",
   auth,
-  requireRole(["Admin"]),
+  requireRole(["Admin", "HeadOfDepartment"]),
   ctrl.getTimeSlots
+);
+
+router.post(
+  "/exam-sessions/:examSessionId/time-slots/generate",
+  auth,
+  requireRole(["Admin"]),
+  ctrl.generateTimeSlots
 );
 
 // Update/delete a slot by id

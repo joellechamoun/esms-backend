@@ -48,6 +48,12 @@ app.use("/api/courses", coursesRoutes);
 const majorsRoutes = require("./routes/majors.routes");
 app.use("/api/majors", majorsRoutes);
 
+const departmentsRoutes = require("./routes/departments.routes");
+app.use("/api/departments", departmentsRoutes);
+
+const usersRoutes = require("./routes/users.routes");
+app.use("/api/users", usersRoutes);
+
 const roomsRoutes = require("./routes/rooms.routes");
 app.use("/api/rooms", roomsRoutes);
 
@@ -68,6 +74,9 @@ app.use("/api/settings", settingsRoutes);
 
 const examsRoutes = require("./routes/exams.routes");
 app.use("/api/exams", examsRoutes);
+
+const examSchedulesRoutes = require("./routes/examSchedules.routes");
+app.use("/api/exam-schedules", examSchedulesRoutes);
 
 // 404 handler (no route matched)
 app.use((req, res) => {

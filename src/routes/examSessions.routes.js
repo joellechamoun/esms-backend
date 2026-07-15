@@ -5,7 +5,11 @@ const ctrl = require("../controllers/examSessions.controller");
 router.use(auth);
 
 router.post("/", requireRole(["Admin"]), ctrl.createExamSession);
-router.get("/", requireRole(["Admin"]), ctrl.getExamSessions);
+router.get(
+  "/",
+  requireRole(["Admin", "HeadOfDepartment"]),
+  ctrl.getExamSessions
+);
 router.put("/:id", requireRole(["Admin"]), ctrl.updateExamSession);
 router.delete("/:id", requireRole(["Admin"]), ctrl.deleteExamSession);
 

@@ -1,6 +1,7 @@
 const Registration = require("../models/Registration");
 const Course = require("../models/Course");
 const Exam = require("../models/Exam");
+const ExamSchedule = require("../models/ExamSchedule");
 
 async function createRegistration(req, res) {
   try {
@@ -106,7 +107,14 @@ async function getMyExamSchedule(req, res) {
     const regs = await Registration.find({ student: studentId });
     const courseIds = regs.map((reg) => reg.course);
 
-    const exams = await Exam.find({ course: { $in: courseIds } })
+    const publishedSchedules = await ExamSchedule.find({
+      status: "Published",
+    }).select("_id");
+
+    const exams = await Exam.find({
+      course: { $in: courseIds },
+      examSchedule: { $in: publishedSchedules.map((s) => s._id) },
+    })
       .populate({
         path: "course",
         select: "code name year semester major",

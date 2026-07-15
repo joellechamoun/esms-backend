@@ -1,12 +1,15 @@
 const ExamSession = require("../models/ExamSession");
 const Exam = require("../models/Exam");
+const TimeSlot = require("../models/TimeSlot");
 
-function buildSessionName(season, academicYear, examType) {
-  return `${season} ${academicYear} - ${examType}`;
+function buildSessionName(sessionOrder, semesterScope, examType, academicYear) {
+  const scopeLabel = semesterScope === "Both" ? "S1 & S2" : semesterScope;
+  return `${academicYear} - ${sessionOrder} Session (${scopeLabel}) - ${examType}`;
 }
 
 function validateExamSessionData({
-  season,
+  sessionOrder,
+  semesterScope,
   academicYear,
   examType,
   startDate,
@@ -14,18 +17,39 @@ function validateExamSessionData({
 }) {
   const numericYear = Number(academicYear);
 
-  if (!season || !academicYear || !examType || !startDate || !endDate) {
+  if (
+    !sessionOrder ||
+    !semesterScope ||
+    !academicYear ||
+    !examType ||
+    !startDate ||
+    !endDate
+  ) {
     return {
       valid: false,
       message:
-        "season, academicYear, examType, startDate and endDate are required",
+        "sessionOrder, semesterScope, academicYear, examType, startDate and endDate are required",
     };
   }
 
-  if (!["Fall", "Spring"].includes(season)) {
+  if (!["First", "Second", "Other"].includes(sessionOrder)) {
     return {
       valid: false,
-      message: "Season must be Fall or Spring",
+      message: "Session order must be First, Second, or Other",
+    };
+  }
+
+  if (!["S1", "S2", "Both"].includes(semesterScope)) {
+    return {
+      valid: false,
+      message: "Semester scope must be S1, S2, or Both",
+    };
+  }
+
+  if (!["Partial", "Final"].includes(examType)) {
+    return {
+      valid: false,
+      message: "Exam type must be Partial or Final",
     };
   }
 
@@ -40,10 +64,26 @@ function validateExamSessionData({
     };
   }
 
-  if (!["Midterm", "Final"].includes(examType)) {
+  // First/Second follow the normal academic calendar; Other is a deliberate
+  // escape hatch for the rare additional sessions that don't fit that shape.
+  if (sessionOrder === "Second") {
+    if (semesterScope !== "Both") {
+      return {
+        valid: false,
+        message: "A Second Session must cover both S1 and S2",
+      };
+    }
+
+    if (examType !== "Final") {
+      return {
+        valid: false,
+        message: "A Second Session must be Final",
+      };
+    }
+  } else if (sessionOrder === "First" && semesterScope === "Both") {
     return {
       valid: false,
-      message: "Exam type must be Midterm or Final",
+      message: "A First Session must cover only S1 or S2, not both",
     };
   }
 
@@ -60,12 +100,84 @@ function validateExamSessionData({
   };
 }
 
+// Chronological rank within a year for the three sessions that follow the
+// normal academic calendar. "Other" sessions have no fixed position, so they
+// only participate in the overlap check below, not the ordering check.
+const SESSION_ORDER_RANK = {
+  "First:S1": 1,
+  "First:S2": 2,
+  "Second:Both": 3,
+};
+
+function getSessionRank(sessionOrder, semesterScope) {
+  return SESSION_ORDER_RANK[`${sessionOrder}:${semesterScope}`] ?? null;
+}
+
+async function checkSessionDateConstraints({
+  sessionOrder,
+  semesterScope,
+  academicYear,
+  startDate,
+  endDate,
+  excludeId,
+}) {
+  const query = { academicYear };
+
+  if (excludeId) {
+    query._id = { $ne: excludeId };
+  }
+
+  const otherSessions = await ExamSession.find(query);
+
+  const newStart = new Date(startDate);
+  const newEnd = new Date(endDate);
+  const newRank = getSessionRank(sessionOrder, semesterScope);
+
+  for (const other of otherSessions) {
+    const otherStart = new Date(other.startDate);
+    const otherEnd = new Date(other.endDate);
+
+    // No two sessions in the same year can have overlapping date ranges,
+    // regardless of type - they'd represent conflicting exam periods.
+    if (newStart <= otherEnd && newEnd >= otherStart) {
+      return {
+        valid: false,
+        message: `Date range overlaps with an existing session in ${academicYear}: "${other.name}"`,
+      };
+    }
+
+    if (newRank === null) continue;
+
+    const otherRank = getSessionRank(other.sessionOrder, other.semesterScope);
+
+    if (otherRank === null || otherRank === newRank) continue;
+
+    if (newRank < otherRank && newEnd >= otherStart) {
+      return {
+        valid: false,
+        message: `${sessionOrder} Session (${semesterScope}) must end before "${other.name}" starts`,
+      };
+    }
+
+    if (newRank > otherRank && newStart <= otherEnd) {
+      return {
+        valid: false,
+        message: `${sessionOrder} Session (${semesterScope}) must start after "${other.name}" ends`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
 async function createExamSession(req, res) {
   try {
-    const { season, academicYear, examType, startDate, endDate } = req.body;
+    const { sessionOrder, semesterScope, academicYear, examType, startDate, endDate } =
+      req.body;
 
     const validation = validateExamSessionData({
-      season,
+      sessionOrder,
+      semesterScope,
       academicYear,
       examType,
       startDate,
@@ -76,10 +188,28 @@ async function createExamSession(req, res) {
       return res.status(400).json({ message: validation.message });
     }
 
-    const name = buildSessionName(season, validation.numericYear, examType);
+    const dateConstraint = await checkSessionDateConstraints({
+      sessionOrder,
+      semesterScope,
+      academicYear: validation.numericYear,
+      startDate,
+      endDate,
+    });
+
+    if (!dateConstraint.valid) {
+      return res.status(409).json({ message: dateConstraint.message });
+    }
+
+    const name = buildSessionName(
+      sessionOrder,
+      semesterScope,
+      examType,
+      validation.numericYear
+    );
 
     const session = await ExamSession.create({
-      season,
+      sessionOrder,
+      semesterScope,
       academicYear: validation.numericYear,
       examType,
       name,
@@ -103,7 +233,8 @@ async function getExamSessions(req, res) {
   try {
     const sessions = await ExamSession.find().sort({
       academicYear: -1,
-      season: 1,
+      sessionOrder: 1,
+      semesterScope: 1,
       examType: 1,
     });
 
@@ -121,14 +252,16 @@ async function updateExamSession(req, res) {
       return res.status(404).json({ message: "Exam session not found" });
     }
 
-    const season = req.body.season ?? existingSession.season;
+    const sessionOrder = req.body.sessionOrder ?? existingSession.sessionOrder;
+    const semesterScope = req.body.semesterScope ?? existingSession.semesterScope;
     const academicYear = req.body.academicYear ?? existingSession.academicYear;
     const examType = req.body.examType ?? existingSession.examType;
     const startDate = req.body.startDate ?? existingSession.startDate;
     const endDate = req.body.endDate ?? existingSession.endDate;
 
     const validation = validateExamSessionData({
-      season,
+      sessionOrder,
+      semesterScope,
       academicYear,
       examType,
       startDate,
@@ -139,12 +272,31 @@ async function updateExamSession(req, res) {
       return res.status(400).json({ message: validation.message });
     }
 
-    const name = buildSessionName(season, validation.numericYear, examType);
+    const dateConstraint = await checkSessionDateConstraints({
+      sessionOrder,
+      semesterScope,
+      academicYear: validation.numericYear,
+      startDate,
+      endDate,
+      excludeId: req.params.id,
+    });
+
+    if (!dateConstraint.valid) {
+      return res.status(409).json({ message: dateConstraint.message });
+    }
+
+    const name = buildSessionName(
+      sessionOrder,
+      semesterScope,
+      examType,
+      validation.numericYear
+    );
 
     const session = await ExamSession.findByIdAndUpdate(
       req.params.id,
       {
-        season,
+        sessionOrder,
+        semesterScope,
         academicYear: validation.numericYear,
         examType,
         name,
@@ -174,6 +326,17 @@ async function deleteExamSession(req, res) {
       return res.status(400).json({
         message:
           "Cannot delete this exam session because exams are scheduled in it",
+      });
+    }
+
+    const linkedTimeSlot = await TimeSlot.findOne({
+      examSession: req.params.id,
+    });
+
+    if (linkedTimeSlot) {
+      return res.status(400).json({
+        message:
+          "Cannot delete this exam session because it has time slots. Delete its time slots first.",
       });
     }
 
