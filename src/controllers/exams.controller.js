@@ -71,16 +71,20 @@ async function createExam(req, res) {
 
     const sameDayExams = await Exam.find({
       timeSlot: { $in: sameDayTimeSlotIds },
-    }).populate("course");
+    }).populate("course", "year major");
 
     for (let existingExam of sameDayExams) {
       if (!existingExam.course) {
         continue;
       }
-    
-      if (existingExam.course.year !== courseExists.year) {
+
+      const sameMajor =
+        existingExam.course.major?.toString() === courseExists.major._id.toString();
+
+      if (sameMajor && existingExam.course.year !== courseExists.year) {
         return res.status(409).json({
-          message: "Different academic years cannot have exams on the same day",
+          message:
+            "Different academic years cannot have exams on the same day within the same major",
         });
       }
     }

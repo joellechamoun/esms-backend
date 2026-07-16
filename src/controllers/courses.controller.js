@@ -41,7 +41,7 @@ function validateYearAndSemester(year, semester) {
   };
 }
 
-async function validateCourseYearChange(courseId, newYear) {
+async function validateCourseYearChange(courseId, majorId, newYear) {
   const courseExams = await Exam.find({ course: courseId }).populate(
     "timeSlot",
     "date"
@@ -59,16 +59,18 @@ async function validateCourseYearChange(courseId, newYear) {
     const sameDayOtherExams = await Exam.find({
       _id: { $ne: courseExam._id },
       timeSlot: { $in: sameDayTimeSlotIds },
-    }).populate("course", "year code name");
+    }).populate("course", "year code name major");
 
     for (const otherExam of sameDayOtherExams) {
       if (!otherExam.course) continue;
 
-      if (otherExam.course.year !== newYear) {
+      const sameMajor = otherExam.course.major?.toString() === majorId.toString();
+
+      if (sameMajor && otherExam.course.year !== newYear) {
         return {
           valid: false,
           message:
-            "Cannot update course year because this course already has an exam on a day with another academic year",
+            "Cannot update course year because this course already has an exam on a day with another academic year in the same major",
         };
       }
     }
@@ -261,6 +263,7 @@ async function updateCourse(req, res) {
     if (finalYear !== existingCourse.year) {
       const yearChangeValidation = await validateCourseYearChange(
         existingCourse._id,
+        existingCourse.major._id,
         validation.numericYear
       );
 
