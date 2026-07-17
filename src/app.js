@@ -78,6 +78,9 @@ app.use("/api/exams", examsRoutes);
 const examSchedulesRoutes = require("./routes/examSchedules.routes");
 app.use("/api/exam-schedules", examSchedulesRoutes);
 
+const dashboardRoutes = require("./routes/dashboard.routes");
+app.use("/api/dashboard", dashboardRoutes);
+
 // 404 handler (no route matched)
 app.use((req, res) => {
   res.status(404).json({ message: "Not found" });

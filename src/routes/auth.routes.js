@@ -206,7 +206,9 @@ router.post("/login", loginLimiter, async (req, res) => {
 // Current user
 router.get("/me", auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select("-passwordHash");
+    const user = await User.findById(req.user.userId)
+      .select("-passwordHash")
+      .populate("department", "name code");
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
