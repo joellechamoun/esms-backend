@@ -1,0 +1,223 @@
+const router = require("express").Router();
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
+const User = require("../models/User");
+const Department = require("../models/Department");
+const { auth } = require("../middleware/auth");
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts. Please try again later." },
+});
+
+const studentRegisterLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many registration attempts. Please try again later." },
+});
+
+// Register
+// - If no users exist yet: allow creating the first user (default Admin)
+// - If users exist: only an Admin (with Bearer token) can create users
+router.post("/register", async (req, res) => {
+  try {
+    const { name, email, password, role, department } = req.body;
+
+    if (!name || !email || !password) {
+      return res
+        .status(400)
+        .json({ message: "name, email, password are required" });
+    }
+
+    const emailNorm = email.toLowerCase();
+
+    const exists = await User.findOne({ email: emailNorm });
+    if (exists) return res.status(409).json({ message: "Email already exists" });
+
+    const usersCount = await User.countDocuments();
+
+    if (usersCount > 0) {
+      const header = req.headers.authorization || "";
+      const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+
+      if (!token) {
+        return res.status(401).json({ message: "Missing token (admin required)" });
+      }
+
+      let payload;
+
+      try {
+        payload = jwt.verify(token, process.env.JWT_SECRET);
+      } catch (e) {
+        return res.status(401).json({ message: "Invalid or expired token" });
+      }
+
+      if (payload.role !== "Admin") {
+        return res.status(403).json({ message: "Only Admin can create users" });
+      }
+    }
+
+    const finalRole = usersCount === 0 ? role || "Admin" : role || "Student";
+
+    let departmentDoc = null;
+
+    if (usersCount > 0) {
+      if (!department) {
+        return res.status(400).json({
+          message: "department is required",
+        });
+      }
+
+      departmentDoc = await Department.findById(department);
+
+      if (!departmentDoc) {
+        return res.status(404).json({ message: "Department not found" });
+      }
+
+      if (finalRole === "HeadOfDepartment" && departmentDoc.head) {
+        return res.status(409).json({
+          message: "This department already has a head of department",
+        });
+      }
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
+      name: name.trim(),
+      email: emailNorm,
+      passwordHash,
+      role: finalRole,
+      department: departmentDoc ? departmentDoc._id : null,
+    });
+
+    if (finalRole === "HeadOfDepartment" && departmentDoc) {
+      departmentDoc.head = user._id;
+      await departmentDoc.save();
+    }
+
+    return res.status(201).json({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      department: user.department,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// Public student registration
+router.post("/student-register", studentRegisterLimiter, async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res
+        .status(400)
+        .json({ message: "name, email, password are required" });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    const emailNorm = email.toLowerCase().trim();
+
+    const exists = await User.findOne({ email: emailNorm });
+
+    if (exists) {
+      return res.status(409).json({ message: "Email already exists" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
+      name: name.trim(),
+      email: emailNorm,
+      passwordHash,
+      role: "Student",
+    });
+
+    return res.status(201).json({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// Login
+router.post("/login", loginLimiter, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ message: "email and password are required" });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const ok = await bcrypt.compare(password, user.passwordHash);
+
+    if (!ok) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const token = jwt.sign(
+      { userId: user._id.toString(), role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    return res.json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// Current user
+router.get("/me", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId)
+      .select("-passwordHash")
+      .populate("department", "name code");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json(user);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+module.exports = router;
