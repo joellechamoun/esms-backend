@@ -15,6 +15,9 @@ router.get(
 // Admin + HeadOfDepartment schedule exams (HoD scoped to own department)
 router.post("/", requireRole(["Admin", "HeadOfDepartment"]), ctrl.createExam);
 
+// Admin + HeadOfDepartment move exams to a new time slot (HoD scoped to own department + Draft-only)
+router.patch("/:id", requireRole(["Admin", "HeadOfDepartment"]), ctrl.updateExam);
+
 // Admin + HeadOfDepartment delete exams (HoD scoped to own department + Draft-only)
 router.delete(
   "/:id",

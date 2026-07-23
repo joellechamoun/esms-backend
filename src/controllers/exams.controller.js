@@ -253,6 +253,97 @@ async function getStructuredExams(req, res) {
   }
 }
 
+// MOVE EXAM (reschedule to a different time slot without deleting it)
+async function updateExam(req, res) {
+  try {
+    const { timeSlot } = req.body;
+
+    if (!timeSlot) {
+      return res.status(400).json({ message: "timeSlot is required" });
+    }
+
+    const exam = await Exam.findById(req.params.id)
+      .populate("examSchedule")
+      .populate("course", "year major");
+
+    if (!exam) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+
+    if (req.user.role === "HeadOfDepartment") {
+      const headDepartment = await getActingHeadDepartment(req);
+
+      if (
+        !headDepartment ||
+        exam.examSchedule.department.toString() !== headDepartment
+      ) {
+        return res.status(403).json({
+          message: "You can only edit exams in your own department",
+        });
+      }
+    }
+
+    if (exam.examSchedule.status !== "Draft") {
+      return res.status(409).json({
+        message: `Cannot edit an exam in a schedule that is ${exam.examSchedule.status}`,
+      });
+    }
+
+    const timeSlotExists = await TimeSlot.findById(timeSlot);
+    if (!timeSlotExists) {
+      return res.status(404).json({ message: "TimeSlot not found" });
+    }
+
+    const sameDayTimeSlots = await TimeSlot.find({
+      date: timeSlotExists.date,
+    });
+
+    const sameDayTimeSlotIds = sameDayTimeSlots.map((slot) => slot._id);
+
+    const sameDayExams = await Exam.find({
+      timeSlot: { $in: sameDayTimeSlotIds },
+      _id: { $ne: exam._id },
+    }).populate("course", "year major");
+
+    for (let existingExam of sameDayExams) {
+      if (!existingExam.course) {
+        continue;
+      }
+
+      const sameMajor =
+        existingExam.course.major?.toString() === exam.course.major.toString();
+
+      if (sameMajor && existingExam.course.year !== exam.course.year) {
+        return res.status(409).json({
+          message:
+            "Different academic years cannot have exams on the same day within the same major",
+        });
+      }
+    }
+
+    exam.timeSlot = timeSlot;
+    await exam.save();
+
+    const populatedExam = await Exam.findById(exam._id)
+      .populate({
+        path: "course",
+        select: "code name year semester major",
+        populate: {
+          path: "major",
+          select: "code name",
+        },
+      })
+      .populate("room", "name capacity building")
+      .populate("timeSlot", "date startTime endTime")
+      .populate("examSession", "name startDate endDate status")
+      .populate("examSchedule", "status");
+
+    return res.json(populatedExam);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
 async function deleteExam(req, res) {
   try {
     const exam = await Exam.findById(req.params.id).populate("examSchedule");
@@ -292,5 +383,6 @@ module.exports = {
   createExam,
   getExams,
   getStructuredExams,
+  updateExam,
   deleteExam,
 };
