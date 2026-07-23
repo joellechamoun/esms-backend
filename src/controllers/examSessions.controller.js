@@ -1,6 +1,7 @@
 const ExamSession = require("../models/ExamSession");
 const Exam = require("../models/Exam");
 const TimeSlot = require("../models/TimeSlot");
+const ExamSchedule = require("../models/ExamSchedule");
 
 function buildSessionName(sessionOrder, semesterScope, examType, academicYear) {
   const scopeLabel = semesterScope === "Both" ? "S1 & S2" : semesterScope;
@@ -337,6 +338,17 @@ async function deleteExamSession(req, res) {
       return res.status(400).json({
         message:
           "Cannot delete this exam session because it has time slots. Delete its time slots first.",
+      });
+    }
+
+    const linkedSchedule = await ExamSchedule.findOne({
+      examSession: req.params.id,
+    });
+
+    if (linkedSchedule) {
+      return res.status(400).json({
+        message:
+          "Cannot delete this exam session because a department exam schedule is linked to it",
       });
     }
 

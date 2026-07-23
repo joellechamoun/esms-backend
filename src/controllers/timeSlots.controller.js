@@ -1,6 +1,11 @@
+const mongoose = require("mongoose");
 const TimeSlot = require("../models/TimeSlot");
 const ExamSession = require("../models/ExamSession");
 const Exam = require("../models/Exam");
+
+function isValidId(id) {
+  return mongoose.Types.ObjectId.isValid(id);
+}
 
 function toDateOnlyString(dateValue) {
   return new Date(dateValue).toISOString().slice(0, 10);
@@ -43,6 +48,10 @@ async function createTimeSlot(req, res) {
   try {
     const { examSessionId } = req.params;
     const { date, startTime, endTime, isActive } = req.body;
+
+    if (!isValidId(examSessionId)) {
+      return res.status(400).json({ message: "Invalid exam session id" });
+    }
 
     if (!date || !startTime || !endTime) {
       return res.status(400).json({
@@ -92,6 +101,10 @@ async function createTimeSlot(req, res) {
 async function getTimeSlots(req, res) {
   try {
     const { examSessionId } = req.params;
+
+    if (!isValidId(examSessionId)) {
+      return res.status(400).json({ message: "Invalid exam session id" });
+    }
 
     const slots = await TimeSlot.find({ examSession: examSessionId }).sort({
       date: 1,
@@ -167,6 +180,10 @@ async function generateTimeSlots(req, res) {
   try {
     const { examSessionId } = req.params;
     const { daysOfWeek, timeBlocks } = req.body;
+
+    if (!isValidId(examSessionId)) {
+      return res.status(400).json({ message: "Invalid exam session id" });
+    }
 
     if (!Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
       return res.status(400).json({ message: "daysOfWeek is required" });
